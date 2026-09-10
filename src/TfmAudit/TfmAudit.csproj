@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <AssemblyName>tfm-audit</AssemblyName>
+    <RootNamespace>TfmAudit</RootNamespace>
+    <AssemblyTitle>TFM Audit — анализатор устаревших таргетов в графе зависимостей NuGet</AssemblyTitle>
+    <Product>TFM Audit</Product>
+    <Version>1.0.0</Version>
+
+    <!-- Утилита собрана под net6.0, но должна запускаться и там, где стоит только более новый рантайм. -->
+    <RollForward>LatestMajor</RollForward>
+
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- Никаких PackageReference: утилита использует только то, что есть в net6.0 из коробки. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Reporting/Templates/report.html" LogicalName="TfmAudit.Reporting.Templates.report.html" />
+  </ItemGroup>
+
+</Project>

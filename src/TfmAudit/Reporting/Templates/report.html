@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tfm-audit — аудит таргетов зависимостей</title>
+<style>
+:root{
+  --bg:#f7f8fa; --panel:#ffffff; --ink:#1c2028; --muted:#666e7d; --line:#e2e5eb;
+  --err:#c0392b; --err-bg:#fdeceb; --warn:#a86a12; --warn-bg:#fdf4e3; --info:#4a5b86; --info-bg:#eceff8;
+  --ok:#2f7d4f; --ok-bg:#e8f5ec; --accent:#2f5fd0; --accent-bg:#e8eefc;
+  --shadow:0 1px 2px rgba(20,25,35,.05),0 4px 14px rgba(20,25,35,.05);
+}
+@media (prefers-color-scheme:dark){
+:root{
+  --bg:#14171c; --panel:#1b1f26; --ink:#e6e9ef; --muted:#9aa3b2; --line:#2b313b;
+  --err:#f08b82; --err-bg:#33211f; --warn:#e0b163; --warn-bg:#302716; --info:#9fb1de; --info-bg:#1e2433;
+  --ok:#7fc79a; --ok-bg:#1a2a20; --accent:#8ab0ff; --accent-bg:#1c2436;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+}
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:.92em}
+a{color:var(--accent)}
+.wrap{max-width:1500px;margin:0 auto;padding:24px 20px 80px}
+header.top{margin-bottom:20px}
+header.top h1{margin:0 0 4px;font-size:22px;letter-spacing:-.2px}
+header.top .sub{color:var(--muted);font-size:13px}
+.lede{margin:14px 0 0;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-width:920px}
+.lede p{margin:0 0 6px}
+.lede p:last-child{margin:0}
+
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 16px;border-bottom:1px solid var(--line);padding-bottom:0}
+.tab{
+  appearance:none;border:1px solid var(--line);border-bottom:none;background:transparent;color:var(--muted);
+  padding:8px 14px;border-radius:8px 8px 0 0;cursor:pointer;font:inherit;font-size:13px;position:relative;top:1px;
+}
+.tab:hover{color:var(--ink)}
+.tab.on{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 -1px 0 var(--panel) inset}
+.tab .pill{display:inline-block;margin-left:7px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:600;background:var(--err-bg);color:var(--err)}
+.tab .pill.zero{background:var(--ok-bg);color:var(--ok)}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
+.card .n{font-size:26px;font-weight:650;letter-spacing:-.5px;line-height:1.15}
+.card .l{font-size:12px;color:var(--muted);margin-top:2px}
+.card.e .n{color:var(--err)} .card.w .n{color:var(--warn)} .card.i .n{color:var(--info)} .card.g .n{color:var(--ok)}
+
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:var(--shadow)}
+section > h2{margin:0 0 4px;font-size:16px}
+section > .hint{margin:0 0 14px;color:var(--muted);font-size:13px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600}
+td.num,th.num{text-align:right;white-space:nowrap}
+tbody tr:hover{background:var(--bg)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+.bars{display:grid;grid-template-columns:auto 3rem 1fr;gap:6px 10px;align-items:center;font-size:12.5px}
+.bars .t{white-space:nowrap}
+.bars .v{text-align:right;color:var(--muted)}
+.bars .b{height:9px;border-radius:5px;background:var(--info)}
+.bars .row.target .b{background:var(--ok)}
+.bars .row.none .b{background:var(--line)}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.toolbar input[type=search]{
+  flex:1 1 220px;min-width:180px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--ink);font:inherit;font-size:13px;
+}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:20px;
+  padding:4px 11px;font-size:12px;cursor:pointer;user-select:none;font-family:inherit;
+}
+.chip.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+.chip.sev-error.on{background:var(--err-bg);border-color:var(--err);color:var(--err)}
+.chip.sev-warning.on{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+.chip.sev-info.on{background:var(--info-bg);border-color:var(--info);color:var(--info)}
+
+.finding{border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:12px 14px;margin-bottom:10px;background:var(--panel)}
+.finding.error{border-left-color:var(--err)} .finding.warning{border-left-color:var(--warn)} .finding.info{border-left-color:var(--info)}
+.finding h3{margin:0 0 6px;font-size:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;min-width:0}
+.finding h3 .id{font-family:ui-monospace,Menlo,Consolas,monospace;min-width:0;overflow-wrap:anywhere}
+.finding h3 .ver{color:var(--muted);font-weight:400}
+.badge{font-size:11px;padding:1px 7px;border-radius:5px;font-weight:600;white-space:nowrap}
+.badge.error{background:var(--err-bg);color:var(--err)}
+.badge.warning{background:var(--warn-bg);color:var(--warn)}
+.badge.info{background:var(--info-bg);color:var(--info)}
+.badge.tfm{background:var(--bg);color:var(--muted);border:1px solid var(--line);font-family:ui-monospace,Menlo,Consolas,monospace}
+.badge.direct{background:var(--ok-bg);color:var(--ok)}
+.finding .why{margin:0 0 8px}
+.finding dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:12.5px}
+.finding dt{color:var(--muted);white-space:nowrap}
+.finding dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.chain{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+.chain .root{color:var(--accent);font-weight:600}
+.chain .last{color:var(--err);font-weight:600}
+.note{margin-top:8px;padding:7px 10px;border-radius:7px;background:var(--accent-bg);color:var(--ink);font-size:12.5px}
+.note.feed{background:var(--info-bg)}
+.empty{color:var(--muted);padding:14px 0}
+
+.graphbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg)}
+.graphbox svg{display:block;width:100%;height:620px;cursor:grab;touch-action:none}
+.graphbox svg.drag{cursor:grabbing}
+.gnode rect{stroke-width:1.4px}
+.gnode text{font-size:10px;pointer-events:none}
+.gnode .sub{font-size:8.5px;opacity:.72}
+.gnode{cursor:pointer}
+.gnode.dim{opacity:.16}
+.gedge{fill:none;stroke:var(--line);stroke-width:1.1px}
+.gedge.path{stroke:var(--err);stroke-width:1.7px}
+.gedge.dim{opacity:.07}
+.gedge.hot{stroke:var(--accent);stroke-width:2.2px;opacity:1}
+.glayer{font-size:10px;fill:var(--muted)}
+.gcontrols{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.gcontrols .sep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+.gcontrols button{
+  border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;
+  padding:5px 10px;font:inherit;font-size:12px;cursor:pointer
+}
+.gcontrols button:hover{border-color:var(--accent);color:var(--accent)}
+.gcontrols button.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+.ginfo{font-size:12px;color:var(--muted);margin-top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;border:1px solid var(--line)}
+
+.detail{position:fixed;inset:auto 0 0 auto;top:0;width:min(420px,92vw);height:100%;background:var(--panel);
+  border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(20,25,35,.12);padding:18px;overflow:auto;z-index:40;
+  transform:translateX(100%);transition:transform .18s ease}
+.detail.open{transform:none}
+.detail h3{margin:0 0 2px;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.detail .close{position:absolute;top:12px;right:14px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+.detail dl{margin:12px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:12.5px}
+.detail dt{color:var(--muted)}
+.detail dd{margin:0;overflow-wrap:anywhere}
+footer{color:var(--muted);font-size:12px;text-align:center;margin-top:28px}
+@media (max-width:640px){
+  .wrap{padding:16px 14px 60px}
+  .graphbox svg{height:460px}
+  .finding dl{grid-template-columns:1fr}
+  .finding dt{margin-top:6px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Аудит таргетов в графе зависимостей</h1>
+    <div class="sub" id="meta"></div>
+    <div class="lede">
+      <p>Отчёт показывает пакеты, которые <b>под конкретным таргетом отдают ассеты более раннего поколения</b> —
+      например <code>lib/net6.0</code> под <code>net8.0</code> или <code>lib/net8.0</code> под <code>net10.0</code>.
+      NuGet выбирает наибольшую папку, не превышающую таргет, поэтому подмена происходит молча, без предупреждений сборки.</p>
+      <p>Каждый таргет проверяется относительно себя: мультитаргетность и условные ссылки
+      (<code>Condition="'$(TargetFramework)'=='net6.0'"</code>) находками не считаются.</p>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+
+  <footer id="footer"></footer>
+</div>
+
+<aside class="detail" id="detail" aria-hidden="true">
+  <button class="close" id="detailClose" title="Закрыть">×</button>
+  <div id="detailBody"></div>
+</aside>
+
+<script id="payload" type="application/json">/*__PAYLOAD__*/</script>
+<script>
+"use strict";
+var DATA = JSON.parse(document.getElementById("payload").textContent);
+
+/* ------------------------------------------------------------------ утилиты */
+function el(tag, attrs, kids){
+  var n = document.createElement(tag);
+  if (attrs) for (var k in attrs){
+    if (k === "class") n.className = attrs[k];
+    else if (k === "text") n.textContent = attrs[k];
+    else if (k === "html") n.innerHTML = attrs[k];
+    else if (k.slice(0,2) === "on") n.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+  }
+  (kids || []).forEach(function(c){ if (c) n.appendChild(c); });
+  return n;
+}
+function svgEl(tag, attrs){
+  var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function plural(n, one, few, many){
+  var m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+var SEV_RU = { error:"ошибка", warning:"предупреждение", info:"информация" };
+
+/* ------------------------------------------------------------------ вкладки */
+var flat = [];
+DATA.projects.forEach(function(p){
+  p.frameworks.forEach(function(f){ flat.push({ project:p, fw:f }); });
+});
+
+var meta = document.getElementById("meta");
+meta.textContent = "tfm-audit " + DATA.version + " · " + DATA.generatedAt +
+  (DATA.online ? " · опрошены источники: " + (DATA.sources.join(", ") || "нет") : " · без опроса NuGet-фида");
+
+var tabsHost = document.getElementById("tabs");
+var view = document.getElementById("view");
+var current = 0;
+
+flat.forEach(function(item, idx){
+  var errs = item.fw.stats.error;
+  var label = (DATA.projects.length > 1 ? item.project.name + " · " : "") + item.fw.alias;
+  var tab = el("button", { class:"tab" + (idx === 0 ? " on" : ""), type:"button",
+    onclick:function(){ current = idx; render(); } });
+  tab.appendChild(document.createTextNode(label));
+  tab.appendChild(el("span", { class:"pill" + (errs ? "" : " zero"), text:errs ? String(errs) : "✔" }));
+  tabsHost.appendChild(tab);
+});
+
+document.getElementById("footer").textContent =
+  "Сформировано утилитой tfm-audit " + DATA.version + " по данным project.assets.json. " +
+  "Отчёт самодостаточен: его можно переслать и открыть без интернета.";
+
+/* ------------------------------------------------------------------ фильтры */
+var filters = { sev:{ error:true, warning:true, info:true }, tfm:{}, q:"" };
+
+function resetFilters(fw){
+  filters.sev = { error:true, warning:true, info:true };
+  filters.tfm = {};
+  filters.q = "";
+  fw.findings.forEach(function(f){ filters.tfm[f.assetTfm] = true; });
+}
+
+function visible(fw){
+  var q = filters.q.trim().toLowerCase();
+  return fw.findings.filter(function(f){
+    if (!filters.sev[f.sev]) return false;
+    if (filters.tfm[f.assetTfm] === false) return false;
+    if (q){
+      var hay = (f.id + " " + f.version + " " + f.assetTfm + " " + f.roots.join(" ")).toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ отрисовка */
+function render(){
+  Array.prototype.forEach.call(tabsHost.children, function(t, i){
+    t.className = "tab" + (i === current ? " on" : "");
+  });
+
+  var item = flat[current], fw = item.fw;
+  resetFilters(fw);
+  view.textContent = "";
+
+  view.appendChild(el("section", {}, [
+    el("h2", { text:"Проект " + item.project.name + ", таргет " + fw.alias + " (" + fw.tfmDisplay + ")" }),
+    el("p", { class:"hint", text:item.project.assetsPath }),
+    cards(fw),
+    fw.assetTargetFallback ? el("div", { class:"note", html:
+        "<b>Включён AssetTargetFallback</b>" + (fw.imports.length ? " (" + fw.imports.join(", ") + ")" : "") +
+        " — несовместимые ассеты подставляются молча, без ошибки восстановления." }) : null,
+    histogram(fw),
+  ]));
+
+  if (fw.plan.length) view.appendChild(planSection(fw));
+  view.appendChild(graphSection(fw));
+  view.appendChild(findingsSection(fw));
+}
+
+function cards(fw){
+  var s = fw.stats;
+  function card(cls, n, l){ return el("div", { class:"card " + cls }, [
+    el("div", { class:"n", text:String(n) }), el("div", { class:"l", text:l })]); }
+  return el("div", { class:"cards" }, [
+    card("e", s.error, "ошибок — ассет отстаёт на 2+ поколения"),
+    card("w", s.warning, "предупреждений"),
+    card("i", s.info, "информационных"),
+    card("g", s.upToDate, "пакетов с ассетом ровно под таргет"),
+    card("", s.packages, "пакетов в графе"),
+    card("", s.direct, "прямых зависимостей"),
+  ]);
+}
+
+function histogram(fw){
+  if (!fw.histogram.length) return null;
+  var max = fw.histogram.reduce(function(m, r){ return Math.max(m, r[1]); }, 0);
+  var rows = [];
+  fw.histogram.forEach(function(r){
+    var cls = "row" + (r[0] === fw.tfm ? " target" : (r[0] === "—" ? " none" : ""));
+    rows.push(el("div", { class:cls + " t mono", text:r[0] }));
+    rows.push(el("div", { class:cls + " v", text:String(r[1]) }));
+    var track = el("div", { class:cls }, [ el("div", { class:"b", style:"width:" + Math.max(2, r[1]*100/max) + "%" }) ]);
+    rows.push(track);
+  });
+  return el("div", {}, [
+    el("p", { class:"hint", style:"margin:16px 0 8px", text:"Худший TFM выбранных ассетов, по пакетам:" }),
+    el("div", { class:"bars" }, rows)
+  ]);
+}
+
+function planSection(fw){
+  var body = [];
+  fw.plan.forEach(function(r){
+    body.push(el("tr", {}, [
+      el("td", { class:"num", text:String(r.order) }),
+      el("td", {}, [
+        el("code", { text:r.id }),
+        r.itselfOutdated ? el("span", { class:"badge warning", text:"сам устарел", style:"margin-left:6px" }) : null,
+        r.projectRef ? el("span", { class:"badge info", text:"ProjectReference", style:"margin-left:6px" }) : null,
+        r.auto ? el("span", { class:"badge info", text:"autoReferenced", style:"margin-left:6px" }) : null,
+        r.range ? el("div", { class:"hint mono", text:"в csproj: " + r.range }) : null,
+      ]),
+      el("td", { class:"mono", text:r.version }),
+      el("td", { class:"num", text:String(r.covers.length) }),
+      el("td", { class:"num", text:String(r.exclusive.length) }),
+      el("td", { text:r.upgrade || "—" }),
+    ]));
+  });
+
+  var single = fw.stats.singleOwner, many = fw.stats.manyOwners;
+
+  return el("section", {}, [
+    el("h2", { text:"Что обновить" }),
+    el("p", { class:"hint", text:"К находкам ведут " + fw.plan.length + " " +
+      plural(fw.plan.length, "прямая зависимость", "прямые зависимости", "прямых зависимостей") +
+      " из csproj. Транзитивную версию напрямую не поднять — обновлять надо тот пакет, который её тянет." }),
+    el("ul", { class:"hint", style:"margin:0 0 14px;padding-left:20px" }, [
+      el("li", { html:"находок, достижимых ровно из одной прямой зависимости: <b>" + single +
+        "</b> — их снимет одно обновление;" }),
+      el("li", { html:"находок, достижимых сразу из нескольких: <b>" + many +
+        "</b> — уйдут только после обновления всех перечисленных для них виновников." }),
+    ]),
+    el("div", { class:"scroll" }, [
+      el("table", {}, [
+        el("thead", {}, [ el("tr", {}, [
+          el("th", { class:"num", text:"#" }), el("th", { text:"Прямая зависимость" }), el("th", { text:"Версия" }),
+          el("th", { class:"num", text:"Ведёт к находкам" }), el("th", { class:"num", text:"Только через неё" }),
+          el("th", { text:"Совет фида" }) ]) ]),
+        el("tbody", {}, body)
+      ])
+    ]),
+    el("p", { class:"hint", style:"margin-top:12px",
+      text:"Сортировка — по влиянию: сверху те, у кого больше «эксклюзивных» находок. " +
+           "После каждого обновления перезапускайте dotnet restore и прогоняйте анализ снова." })
+  ]);
+}
+
+/* ------------------------------------------------------------------ находки */
+function findingsSection(fw){
+  var list = el("div", { id:"findingList" });
+  var counter = el("p", { class:"hint" });
+
+  function repaint(){
+    var items = visible(fw);
+    counter.textContent = "Показано " + items.length + " из " + fw.findings.length + ".";
+    list.textContent = "";
+    if (!items.length){ list.appendChild(el("div", { class:"empty", text:"Под текущие фильтры ничего не попало." })); return; }
+    items.forEach(function(f){ list.appendChild(findingCard(f)); });
+  }
+
+  var sevChips = el("div", { class:"chips" }, ["error","warning","info"].map(function(s){
+    var n = fw.findings.filter(function(f){ return f.sev === s; }).length;
+    return el("button", { type:"button", class:"chip sev-" + s + " on",
+      text:SEV_RU[s] + " · " + n,
+      onclick:function(){ filters.sev[s] = !filters.sev[s]; this.classList.toggle("on"); repaint(); } });
+  }));
+
+  var tfms = {};
+  fw.findings.forEach(function(f){ tfms[f.assetTfm] = (tfms[f.assetTfm] || 0) + 1; });
+  var tfmChips = el("div", { class:"chips" }, Object.keys(tfms).sort().map(function(t){
+    return el("button", { type:"button", class:"chip on", text:t + " · " + tfms[t],
+      onclick:function(){ filters.tfm[t] = filters.tfm[t] === false; this.classList.toggle("on"); repaint(); } });
+  }));
+
+  var search = el("input", { type:"search", placeholder:"поиск по имени пакета, TFM или виновнику…",
+    oninput:function(){ filters.q = this.value; repaint(); } });
+
+  var s = el("section", {}, [
+    el("h2", { text:"Находки" }),
+    el("p", { class:"hint", text:"Для каждого пакета показано, какой ассет выбрал restore, кто его притащил и каким путём." }),
+    el("div", { class:"toolbar" }, [ search, sevChips ]),
+    el("div", { class:"toolbar" }, [ el("span", { class:"hint", text:"TFM ассета:" }), tfmChips ]),
+    counter, list
+  ]);
+  repaint();
+  return s;
+}
+
+function findingCard(f){
+  var dl = [];
+  function row(k, v){ dl.push(el("dt", { text:k })); dl.push(v.nodeType ? el("dd", {}, [v]) : el("dd", { text:v })); }
+
+  if (f.assets.length){
+    row("Ассеты", el("span", { class:"mono", text:f.assets.slice(0,4).map(function(a){ return a.g + ": " + a.p; }).join("  ·  ") +
+      (f.assets.length > 4 ? "  (+" + (f.assets.length - 4) + ")" : "") }));
+  }
+  if (!f.direct && f.roots.length){
+    row(f.roots.length === 1 ? "Притащил" : "Убрать — обновить все",
+        "глубина " + f.depth + " · " + f.roots.join(", "));
+  }
+  f.chains.forEach(function(ch, i){
+    var parts = [];
+    ch.forEach(function(st, j){
+      if (j) parts.push(document.createTextNode(" → "));
+      parts.push(el("span", { class:j === 0 ? "root" : (j === ch.length - 1 ? "last" : ""), text:st.id + " " + st.v }));
+    });
+    row(i === 0 ? "Путь" : "Ещё путь", el("span", { class:"chain" }, parts));
+  });
+
+  return el("div", { class:"finding " + f.sev }, [
+    el("h3", {}, [
+      el("span", { class:"badge " + f.sev, text:SEV_RU[f.sev] }),
+      el("span", { class:"id", text:f.id }),
+      el("span", { class:"ver", text:f.version }),
+      el("span", { class:"badge tfm", text:"ассет " + f.assetTfm }),
+      f.behind > 0 ? el("span", { class:"badge " + f.sev, text:"−" + f.behind + " " + plural(f.behind, "поколение", "поколения", "поколений") }) : null,
+      f.direct ? el("span", { class:"badge direct", text:"прямая зависимость" }) : null,
+    ]),
+    el("p", { class:"why", text:f.explanation }),
+    el("dl", {}, dl),
+    f.hint ? el("div", { class:"note", text:"💡 " + f.hint }) : null,
+    f.upgrade ? el("div", { class:"note feed", text:"📦 фид: " + f.upgrade }) : null,
+  ]);
+}
+
+/* ------------------------------------------------------------------ граф */
+function graphSection(fw){
+  var box = el("div", { class:"graphbox" });
+  var svg = svgEl("svg", { viewBox:"0 0 1200 620", preserveAspectRatio:"xMidYMid slice" });
+  var root = svgEl("g", {});
+  svg.appendChild(root);
+  box.appendChild(svg);
+
+  var info = el("div", { class:"ginfo", text:"Тяните мышью, чтобы сдвинуть; колесо — масштаб; клик по узлу — подсветить его путь." });
+
+  // По умолчанию показываем только пути до ошибок: полный граф на 200+ узлов нечитаем.
+  var SCOPES = [
+    { key:"error",   label:"только ошибки" },
+    { key:"finding", label:"все находки" },
+    { key:"all",     label:"весь граф" },
+  ];
+  var state = { scope:"error" };
+
+  var scopeButtons = SCOPES.map(function(s){
+    return el("button", { type:"button", text:s.label,
+      class:state.scope === s.key ? "on" : null,
+      onclick:function(){
+        state.scope = s.key;
+        scopeButtons.forEach(function(b, i){ b.className = SCOPES[i].key === s.key ? "on" : ""; });
+        draw();
+      } });
+  });
+
+  var btnFit = el("button", { type:"button", text:"Вписать", onclick:function(){ fitAll(); } });
+  var btnReset = el("button", { type:"button", text:"1:1", onclick:function(){ resetView(); } });
+  var btnClear = el("button", { type:"button", text:"Снять подсветку", onclick:function(){ highlight(null); } });
+
+  var controls = el("div", { class:"gcontrols" },
+    [ el("span", { class:"hint", text:"Показывать:" }) ]
+      .concat(scopeButtons)
+      .concat([ el("span", { class:"sep" }), btnFit, btnReset, btnClear ]));
+
+  var nodes = fw.graph.nodes, edges = fw.graph.edges;
+  var byId = {};
+  nodes.forEach(function(n, i){ n.i = i; byId[n.id] = n; });
+
+  var out = nodes.map(function(){ return []; });
+  var inn = nodes.map(function(){ return []; });
+  edges.forEach(function(e){ out[e[0]].push(e[1]); inn[e[1]].push(e[0]); });
+
+  var shapes = [], lines = [], visibleSet = null, content = { w:1200, h:620 };
+  var VIEW_W = 1200, VIEW_H = 620;
+
+  function layout(list){
+    // Слоями по глубине от проекта; порядок внутри слоя — медианная эвристика, чтобы меньше пересечений.
+    var layers = {}, maxDepth = 0;
+    list.forEach(function(n){
+      var d = Math.max(1, n.depth || 1);
+      maxDepth = Math.max(maxDepth, d);
+      (layers[d] = layers[d] || []).push(n);
+    });
+
+    var keys = Object.keys(layers).map(Number).sort(function(a,b){ return a-b; });
+    keys.forEach(function(d){
+      layers[d].sort(function(a,b){
+        if (a.sev !== b.sev){
+          var w = { error:0, warning:1, info:2, ok:3 };
+          return w[a.sev] - w[b.sev];
+        }
+        return a.id < b.id ? -1 : 1;
+      });
+      layers[d].forEach(function(n, i){ n.ord = i; });
+    });
+
+    for (var pass = 0; pass < 4; pass++){
+      keys.forEach(function(d){
+        layers[d].forEach(function(n){
+          var src = inn[n.i].map(function(j){ return nodes[j]; }).filter(function(m){ return m.ord !== undefined && visibleSet[m.i]; });
+          if (!src.length) return;
+          var vals = src.map(function(m){ return m.ord; }).sort(function(a,b){ return a-b; });
+          n.bary = vals[Math.floor(vals.length/2)];
+        });
+        layers[d].sort(function(a,b){
+          var x = (a.bary === undefined ? a.ord : a.bary), y = (b.bary === undefined ? b.ord : b.bary);
+          if (x !== y) return x - y;
+          return a.ord - b.ord;
+        });
+        layers[d].forEach(function(n, i){ n.ord = i; });
+      });
+    }
+
+    var colW = 250, rowH = 40, pad = 34, headroom = 26;
+    var tallest = Math.max.apply(null, keys.map(function(d){ return layers[d].length; }));
+    var height = pad*2 + headroom + tallest * rowH;
+    keys.forEach(function(d){
+      var col = layers[d], colHeight = col.length * rowH;
+      var top = pad + headroom + (height - pad*2 - headroom - colHeight) / 2;
+      col.forEach(function(n, i){
+        n.x = pad + (d - 1) * colW;
+        n.y = top + i * rowH;
+      });
+    });
+
+    return { width: pad*2 + maxDepth * colW, height: height, layers: layers, keys: keys, pad: pad };
+  }
+
+  function draw(){
+    root.textContent = "";
+    shapes = []; lines = [];
+
+    // Узлы на путях до находок нужного уровня.
+    var keepIds = {};
+    fw.findings.forEach(function(f){
+      if (state.scope === "error" && f.sev !== "error") return;
+      keepIds[f.id] = 1;
+      f.chains.forEach(function(ch){ ch.forEach(function(st){ keepIds[st.id] = 1; }); });
+    });
+
+    visibleSet = {};
+    var list = state.scope === "all" ? nodes.slice() : nodes.filter(function(n){ return !!keepIds[n.id]; });
+    list.forEach(function(n){ visibleSet[n.i] = true; });
+    nodes.forEach(function(n){ n.ord = undefined; n.bary = undefined; n.x = undefined; n.y = undefined; });
+
+    if (!list.length){
+      var msg = svgEl("text", { x:24, y:44, class:"glayer" });
+      msg.textContent = "Для этого режима узлов нет.";
+      root.appendChild(msg);
+      info.textContent = "Нет узлов для показа.";
+      return;
+    }
+
+    var geo = layout(list);
+    var nw = 210, nh = 32;
+    content = { w:geo.width, h:geo.height };
+
+    var gEdges = svgEl("g", {});
+    var gNodes = svgEl("g", {});
+    var gLabels = svgEl("g", {});
+    root.appendChild(gEdges);
+    root.appendChild(gNodes);
+    root.appendChild(gLabels);
+
+    geo.keys.forEach(function(d){
+      var col = geo.layers[d];
+      if (!col.length) return;
+      var t = svgEl("text", { x:col[0].x, y:geo.pad + 10, class:"glayer" });
+      t.textContent = d === 1 ? "уровень 1 — прямые из csproj" : "уровень " + d;
+      gLabels.appendChild(t);
+    });
+
+    edges.forEach(function(e){
+      var a = nodes[e[0]], b = nodes[e[1]];
+      if (!visibleSet[e[0]] || !visibleSet[e[1]]) return;
+      if (a.x === undefined || b.x === undefined) return;
+      var x1 = a.x + nw, y1 = a.y + nh/2, x2 = b.x, y2 = b.y + nh/2;
+      var mx = (x1 + x2) / 2;
+      var p = svgEl("path", {
+        class:"gedge" + (e[2] ? " path" : ""),
+        d:"M" + x1 + "," + y1 + " C" + mx + "," + y1 + " " + mx + "," + y2 + " " + x2 + "," + y2
+      });
+      p.__from = e[0]; p.__to = e[1];
+      gEdges.appendChild(p);
+      lines.push(p);
+    });
+
+    var COL = {
+      error:  { fill:"var(--err-bg)",  stroke:"var(--err)" },
+      warning:{ fill:"var(--warn-bg)", stroke:"var(--warn)" },
+      info:   { fill:"var(--info-bg)", stroke:"var(--info)" },
+      ok:     { fill:"var(--panel)",   stroke:"var(--line)" },
+    };
+
+    list.forEach(function(n){
+      var c = COL[n.sev] || COL.ok;
+      var g = svgEl("g", { class:"gnode", transform:"translate(" + n.x + "," + n.y + ")" });
+      g.appendChild(svgEl("rect", { width:nw, height:nh, rx:6,
+        fill:n.sev === "ok" && n.d ? "var(--ok-bg)" : c.fill,
+        stroke:n.sev === "ok" && n.d ? "var(--ok)" : c.stroke }));
+      var t1 = svgEl("text", { x:8, y:13, fill:"var(--ink)" });
+      t1.textContent = n.id.length > 34 ? n.id.slice(0, 33) + "…" : n.id;
+      var t2 = svgEl("text", { x:8, y:25, class:"sub", fill:"var(--muted)" });
+      t2.textContent = n.v + "  ·  " + n.tfm + (n.d ? "  ·  прямая" : "");
+      g.appendChild(t1); g.appendChild(t2);
+      g.appendChild(svgEl("title", {})).textContent = n.id + " " + n.v + "\nассет: " + n.tfm + "\nглубина: " + n.depth;
+      g.addEventListener("click", function(ev){ ev.stopPropagation(); highlight(n); showDetail(fw, n); });
+      g.__node = n;
+      gNodes.appendChild(g);
+      shapes.push(g);
+    });
+
+    resetView();
+
+    var scopeName = state.scope === "error" ? "Пути до ошибок"
+      : state.scope === "finding" ? "Пути до всех находок" : "Весь граф";
+    info.textContent = scopeName + ": " + list.length + " " +
+      plural(list.length, "узел", "узла", "узлов") + " · " + lines.length + " " +
+      plural(lines.length, "связь", "связи", "связей") +
+      ". Клик по узлу — подсветить его путь; «Вписать» — увидеть картину целиком.";
+  }
+
+  function highlight(n){
+    if (!n){
+      shapes.forEach(function(g){ g.classList.remove("dim"); });
+      lines.forEach(function(p){ p.classList.remove("dim"); p.classList.remove("hot"); });
+      return;
+    }
+
+    var up = {}, down = {};
+    (function walkUp(i){ inn[i].forEach(function(j){ if (!up[j]){ up[j] = 1; walkUp(j); } }); })(n.i);
+    (function walkDown(i){ out[i].forEach(function(j){ if (!down[j]){ down[j] = 1; walkDown(j); } }); })(n.i);
+
+    var keep = {}; keep[n.i] = 1;
+    Object.keys(up).forEach(function(k){ keep[k] = 1; });
+    Object.keys(down).forEach(function(k){ keep[k] = 1; });
+
+    shapes.forEach(function(g){ g.classList.toggle("dim", !keep[g.__node.i]); });
+    lines.forEach(function(p){
+      var hot = keep[p.__from] && keep[p.__to];
+      p.classList.toggle("dim", !hot);
+      p.classList.toggle("hot", !!hot);
+    });
+  }
+
+  svg.addEventListener("click", function(){ highlight(null); });
+
+  /* панорама и масштаб */
+  var tx = 0, ty = 0, scale = 1, dragging = false, lastX = 0, lastY = 0;
+  function apply(){ root.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + scale + ")"); }
+
+  /* 1:1 — читаемый размер подписей, начинаем с левого верхнего угла */
+  function resetView(){ scale = 1; tx = 0; ty = 0; apply(); }
+
+  /* Вписать — видно всю структуру, подписи мельчают */
+  function fitAll(){
+    scale = Math.min(VIEW_W / content.w, VIEW_H / content.h, 1);
+    tx = (VIEW_W - content.w * scale) / 2;
+    ty = (VIEW_H - content.h * scale) / 2;
+    apply();
+  }
+
+  svg.addEventListener("pointerdown", function(e){
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    svg.classList.add("drag");
+    try { svg.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  svg.addEventListener("pointermove", function(e){
+    if (!dragging) return;
+    var vb = svg.viewBox.baseVal, r = svg.getBoundingClientRect();
+    var k = r.width ? vb.width / r.width : 1;
+    tx += (e.clientX - lastX) * k; ty += (e.clientY - lastY) * k;
+    lastX = e.clientX; lastY = e.clientY; apply();
+  });
+  ["pointerup","pointercancel","pointerleave"].forEach(function(evt){
+    svg.addEventListener(evt, function(){ dragging = false; svg.classList.remove("drag"); });
+  });
+  svg.addEventListener("wheel", function(e){
+    e.preventDefault();
+    var f = e.deltaY < 0 ? 1.12 : 1/1.12;
+    var next = Math.min(4, Math.max(0.2, scale * f));
+    scale = next; apply();
+  }, { passive:false });
+
+  draw();
+
+  return el("section", {}, [
+    el("h2", { text:"Граф зависимостей" }),
+    el("p", { class:"hint", text:"Слои — глубина от проекта: первый столбец это прямые зависимости из csproj. " +
+      "Красные связи лежат на путях до находок." }),
+    controls,
+    box,
+    info,
+    el("div", { class:"legend" }, [
+      el("span", { html:"<i style='background:var(--err-bg);border-color:var(--err)'></i>ассет отстаёт на 2+ поколения" }),
+      el("span", { html:"<i style='background:var(--warn-bg);border-color:var(--warn)'></i>отстаёт на 1 поколение" }),
+      el("span", { html:"<i style='background:var(--info-bg);border-color:var(--info)'></i>netstandard / только MSBuild-ассеты" }),
+      el("span", { html:"<i style='background:var(--ok-bg);border-color:var(--ok)'></i>прямая зависимость, ассет актуален" }),
+      el("span", { html:"<i style='background:var(--panel)'></i>ассет актуален" }),
+    ])
+  ]);
+}
+
+/* ------------------------------------------------------------------ панель узла */
+var detail = document.getElementById("detail");
+var detailBody = document.getElementById("detailBody");
+document.getElementById("detailClose").addEventListener("click", function(){
+  detail.classList.remove("open"); detail.setAttribute("aria-hidden", "true");
+});
+
+function showDetail(fw, n){
+  var f = null;
+  for (var i = 0; i < fw.findings.length; i++) if (fw.findings[i].id === n.id){ f = fw.findings[i]; break; }
+
+  detailBody.textContent = "";
+  detailBody.appendChild(el("h3", { text:n.id }));
+  detailBody.appendChild(el("div", { class:"hint", text:n.v }));
+
+  var dl = [];
+  function row(k, v){ dl.push(el("dt", { text:k })); dl.push(v && v.nodeType ? el("dd", {}, [v]) : el("dd", { text:String(v) })); }
+  row("TFM ассета", n.tfm);
+  row("Глубина", n.depth);
+  row("Тип", n.p ? "project-ссылка" : "NuGet-пакет");
+  row("Прямая зависимость", n.d ? "да" : "нет");
+  row("Статус", f ? SEV_RU[f.sev] : "ассет соответствует таргету");
+  detailBody.appendChild(el("dl", {}, dl));
+
+  if (f){
+    detailBody.appendChild(el("p", { style:"margin-top:14px", text:f.explanation }));
+    if (f.assets.length){
+      detailBody.appendChild(el("p", { class:"hint mono", style:"margin-top:8px",
+        text:f.assets.map(function(a){ return a.g + ": " + a.p; }).join("\n") }));
+    }
+    f.chains.forEach(function(ch){
+      detailBody.appendChild(el("p", { class:"chain", style:"margin-top:8px",
+        text:ch.map(function(s){ return s.id + " " + s.v; }).join(" → ") }));
+    });
+    if (f.hint) detailBody.appendChild(el("div", { class:"note", text:"💡 " + f.hint }));
+    if (f.upgrade) detailBody.appendChild(el("div", { class:"note feed", text:"📦 фид: " + f.upgrade }));
+  }
+
+  detail.classList.add("open");
+  detail.setAttribute("aria-hidden", "false");
+}
+
+render();
+</script>
+</body>
+</html>
